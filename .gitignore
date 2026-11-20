@@ -1,0 +1,14 @@
+.*
+!/.gitignore
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+
+# Local configuration, history, and other pre-existing local files
+*.json
+.directory
+.mymenu
+.kumi-pix-symbolic.svg

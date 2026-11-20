@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Kumi
+GenericName=Application Launcher
+Comment=Launch configurable applications and scripts
+Exec=kumi
+Icon=kumi
+Terminal=false
+Categories=Utility;
+StartupNotify=true

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#061c19"/>
+      <stop offset=".55" stop-color="#00120f"/>
+      <stop offset="1" stop-color="#031d18"/>
+    </linearGradient>
+    <linearGradient id="mint" x1=".08" y1=".9" x2=".92" y2=".1">
+      <stop offset="0" stop-color="#13c995"/>
+      <stop offset=".48" stop-color="#8effd1"/>
+      <stop offset="1" stop-color="#d8fff0"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#168b70"/>
+      <stop offset="1" stop-color="#55f0b8"/>
+    </linearGradient>
+    <linearGradient id="swoosh" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00d99b"/>
+      <stop offset=".52" stop-color="#8dffd1"/>
+      <stop offset="1" stop-color="#00a978"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="65%" r="55%">
+      <stop offset="0" stop-color="#00c88e" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#00c88e" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+  </defs>
+  <!-- Rounded application tile -->
+  <rect x="36" y="36" width="952" height="952" rx="112" fill="#00100d"/>
+  <rect x="42" y="42" width="940" height="940" rx="108" fill="url(#bg)" stroke="#174f43" stroke-width="7"/>
+  <rect x="48" y="48" width="928" height="928" rx="102" fill="url(#glow)"/>
+  <path d="M90 168 Q90 90 168 90 H856 Q934 90 934 168" fill="none" stroke="#3b8b77" stroke-opacity=".32" stroke-width="5"/>
+  <!-- soft lower glow -->
+  <ellipse cx="510" cy="770" rx="370" ry="170" fill="#00c98e" opacity=".18" filter="url(#shadow)"/>
+  <!-- sweeping orbit around the mark -->
+  <path d="M280 260 C420 150 710 95 865 178 C1015 258 970 515 850 655 C934 482 925 290 790 220 C665 155 440 195 280 260Z" fill="url(#swoosh)"/>
+  <path d="M170 475 C72 625 120 805 280 865 C455 930 690 875 805 795 C660 910 390 955 220 870 C55 788 40 605 170 475Z" fill="url(#swoosh)"/>
+  <!-- letter K -->
+  <path d="M176 270 H290 V472 L535 270 H675 L425 484 L675 744 H536 L399 566 L290 663 V744 H176Z" fill="#00110e" opacity=".55" transform="translate(0 10)" filter="url(#soft)"/>
+  <path d="M176 270 H290 V472 L535 270 H675 L425 484 L675 744 H536 L399 566 L290 663 V744 H176Z" fill="url(#mint)"/>
+  <path d="M176 270 H290 V472 L535 270 H675 L425 484 L675 744 H536 L399 566 L290 663 V744 H176Z" fill="none" stroke="#e5fff5" stroke-opacity=".38" stroke-width="3"/>
+  <!-- menu bars -->
+  <g>
+    <rect x="618" y="355" width="276" height="76" rx="29" fill="#00110e" opacity=".55" transform="translate(0 8)" filter="url(#soft)"/>
+    <rect x="618" y="355" width="276" height="76" rx="29" fill="url(#bar)"/>
+    <path d="M646 358 H865" stroke="#c4ffe9" stroke-opacity=".42" stroke-width="4" stroke-linecap="round"/>
+    <rect x="618" y="459" width="270" height="76" rx="29" fill="#00110e" opacity=".55" transform="translate(0 8)" filter="url(#soft)"/>
+    <rect x="618" y="459" width="270" height="76" rx="29" fill="url(#bar)"/>
+    <path d="M646 462 H859" stroke="#c4ffe9" stroke-opacity=".4" stroke-width="4" stroke-linecap="round"/>
+    <rect x="618" y="563" width="232" height="76" rx="29" fill="#00110e" opacity=".55" transform="translate(0 8)" filter="url(#soft)"/>
+    <rect x="618" y="563" width="232" height="76" rx="29" fill="url(#bar)"/>
+    <path d="M646 566 H822" stroke="#c4ffe9" stroke-opacity=".4" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>
