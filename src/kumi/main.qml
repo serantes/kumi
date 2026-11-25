@@ -379,7 +379,7 @@ Kirigami.ApplicationWindow {
         objectName: "terminalDialog"
         title: "Live Process Output (STDOUT & STDERR)"
         modal: true
-        closePolicy: processRunner.running ? Popup.CloseOnPressOutside
+        closePolicy: processRunner.running ? Popup.NoAutoClose
                                            : Popup.CloseOnPressOutside | Popup.CloseOnEscape
         width: Math.min(root.width * 0.8, 700)
         height: Math.min(root.height * 0.8, 500)

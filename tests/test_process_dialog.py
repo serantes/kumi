@@ -92,6 +92,31 @@ class ProcessDialogTests(unittest.TestCase):
         self.button.clicked.emit()
         self.wait_until(lambda: not self.dialog.property("opened"))
 
+    def test_press_outside_closes_dialog_only_when_idle(self):
+        """Ignore outside clicks while a supervised process is running."""
+
+        def click_outside():
+            """Click near the window corner, outside the output dialog."""
+            QTest.mouseClick(
+                self.window,
+                Qt.LeftButton,
+                Qt.NoModifier,
+                QPointF(self.window.width() - 5, 5).toPoint(),
+            )
+
+        QMetaObject.invokeMethod(self.dialog, "open")
+        self.wait_until(lambda: self.dialog.property("opened"))
+        self.runner.start_command_with_args("test", "exec sleep 30", "", False)
+        click_outside()
+        QTest.qWait(500)
+        self.assertTrue(self.dialog.property("opened"))
+        self.assertTrue(self.runner.running)
+
+        self.button.clicked.emit()
+        self.wait_until(lambda: not self.runner.running)
+        click_outside()
+        self.wait_until(lambda: not self.dialog.property("opened"))
+
     def test_button_changes_to_close_on_success(self):
         """Replace Abort with Close after successful execution."""
         QMetaObject.invokeMethod(self.dialog, "open")

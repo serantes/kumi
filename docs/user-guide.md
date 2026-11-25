@@ -90,6 +90,10 @@ is disabled. In that window:
   **Close**.
 - **Save Log** saves the displayed output to a text file.
 
+While the command is running, clicking outside the output window or pressing
+Escape does not close it. After the command ends, you can close it by clicking
+outside it.
+
 Press Escape to close Kumi when no supervised process is running. A detached
 process does not block this shortcut.
 
