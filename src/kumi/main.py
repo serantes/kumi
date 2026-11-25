@@ -9,6 +9,8 @@ and per-item or global execution preferences.
 
 import json
 import os
+import shutil
+import stat
 import sys
 import tempfile
 import time
@@ -309,6 +311,71 @@ class ProcessRunner(QObject):
         self._notification_processes.clear()
 
 
+def _validate_items(items: Any, location: str) -> None:
+    """Check that ``items`` is a list of objects, including submenus.
+
+    Raise ``ValueError`` naming ``location`` when the structure is invalid.
+    """
+    if not isinstance(items, list):
+        raise ValueError(f"{location} must be a list")
+    for index, item in enumerate(items):
+        item_location = f"{location}[{index}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{item_location} must be an object")
+        if "items" in item:
+            _validate_items(item["items"], f"{item_location}.items")
+
+
+def _validate_config(data: Any) -> None:
+    """Check the container structure of a configuration.
+
+    ``sections`` is optional here. Individual field values are not checked,
+    so that existing configurations keep loading. Raise ``ValueError`` when
+    the structure is invalid.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("the top level must be an object")
+    sections = data.get("sections", [])
+    if not isinstance(sections, list):
+        raise ValueError("sections must be a list")
+    for index, section in enumerate(sections):
+        location = f"sections[{index}]"
+        if not isinstance(section, dict):
+            raise ValueError(f"{location} must be an object")
+        if "items" in section:
+            _validate_items(section["items"], f"{location}.items")
+
+
+def _write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
+    """Replace ``path`` with ``payload`` without leaving a partial file.
+
+    Symbolic links are followed and the permissions of an existing file are
+    kept. A new file is readable only by its owner. Raise ``OSError`` or
+    ``ValueError`` on failure, leaving any existing file untouched.
+    """
+    target = Path(os.path.realpath(path))
+    mode = None
+    if target.exists():
+        if not os.access(target, os.W_OK):
+            raise PermissionError(f"{target} is not writable")
+        mode = stat.S_IMODE(target.stat().st_mode)
+
+    fd, name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+    )
+    temp_path = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump(payload, file, indent=4, ensure_ascii=False)
+            file.flush()
+            os.fsync(file.fileno())
+        if mode is not None:
+            temp_path.chmod(mode)
+        os.replace(temp_path, target)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 class LauncherBackend(QObject):
     """Expose configuration, history, statistics and settings to QML."""
 
@@ -320,11 +387,13 @@ class LauncherBackend(QObject):
     promptArgumentsChanged = Signal()
     showOutputWindowChanged = Signal()
     statusNotification = Signal(str, bool)
+    configErrorChanged = Signal()
 
     def __init__(self, config_path: Path, parent: QObject = None) -> None:
         """Load configuration and related data beside ``config_path``."""
         super().__init__(parent)
         self._config_path = config_path
+        self._config_error = ""
         self._sections: List[Dict[str, Any]] = []
         self._favorites: List[Dict[str, Any]] = []
         self._stats: Dict[str, Dict[str, Any]] = {}
@@ -342,41 +411,86 @@ class LauncherBackend(QObject):
         self._load_stats()
 
     def _load_config(self) -> None:
-        """Load menu configuration and global settings from JSON."""
+        """Load menu configuration and global settings from JSON.
+
+        If an existing file cannot be read or is invalid, record the problem
+        in ``configError``. Saving is then blocked to preserve the file.
+        """
         if not self._config_path.exists():
             return
         try:
             with self._config_path.open("r", encoding="utf-8") as file:
                 data = json.load(file)
-                self._sections = data.get("sections", [])
-                self._shortcut_modifier = data.get(
-                    "shortcut_modifier", "Ctrl+Shift"
-                )
-                self._show_command = bool(data.get("show_command", False))
-                self._prompt_arguments = bool(
-                    data.get("prompt_arguments", False)
-                )
-                self._show_output_window = bool(
-                    data.get("show_output_window", True)
-                )
-        except (json.JSONDecodeError, OSError):
-            pass
+            _validate_config(data)
+        except (OSError, ValueError) as exc:
+            self._config_error = (
+                f"Could not load {self._config_path}: {exc}\n"
+                "The file will not be overwritten, and changes to the menu "
+                "or settings will not be saved. Fix the file and restart "
+                "Kumi, or import a JSON backup."
+            )
+            print(self._config_error, file=sys.stderr)
+            return
+        self._apply_config(data)
+
+    def _apply_config(self, data: Dict[str, Any]) -> None:
+        """Apply an already validated configuration to the backend."""
+        self._sections = data.get("sections", [])
+        self._shortcut_modifier = data.get("shortcut_modifier", "Ctrl+Shift")
+        self._show_command = bool(data.get("show_command", False))
+        self._prompt_arguments = bool(data.get("prompt_arguments", False))
+        self._show_output_window = bool(data.get("show_output_window", True))
+
+    def _config_payload(self) -> Dict[str, Any]:
+        """Return the current sections and global preferences."""
+        return {
+            "shortcut_modifier": self._shortcut_modifier,
+            "show_command": self._show_command,
+            "prompt_arguments": self._prompt_arguments,
+            "show_output_window": self._show_output_window,
+            "sections": self._sections,
+        }
 
     def _save_config_file(self) -> bool:
-        """Save sections and global preferences to menu configuration JSON."""
-        try:
-            payload = {
-                "shortcut_modifier": self._shortcut_modifier,
-                "show_command": self._show_command,
-                "prompt_arguments": self._prompt_arguments,
-                "show_output_window": self._show_output_window,
-                "sections": self._sections,
-            }
-            with self._config_path.open("w", encoding="utf-8") as file:
-                json.dump(payload, file, indent=4, ensure_ascii=False)
-            return True
-        except OSError:
+        """Save the configuration and report any failure to the interface.
+
+        Return ``False`` without writing if the existing file is invalid.
+        """
+        if self._config_error:
+            self.statusNotification.emit(
+                "Not saved: the existing configuration file could not be "
+                "loaded and has been left unchanged.",
+                False,
+            )
             return False
+        try:
+            _write_json_atomic(self._config_path, self._config_payload())
+            return True
+        except (OSError, ValueError) as exc:
+            self.statusNotification.emit(
+                f"Could not save configuration: {exc}", False
+            )
+            return False
+
+    def _preserve_invalid_config(self) -> Path:
+        """Copy the invalid configuration to a new file and return its path.
+
+        Raise ``OSError`` if the copy cannot be created.
+        """
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        copy_path = self._config_path.with_name(
+            f"{self._config_path.name}.invalid-{timestamp}"
+        )
+        with self._config_path.open("rb") as source:
+            with copy_path.open("xb") as destination:
+                shutil.copyfileobj(source, destination)
+        shutil.copymode(self._config_path, copy_path)
+        return copy_path
+
+    @Property(str, notify=configErrorChanged)
+    def configError(self) -> str:
+        """Return why the configuration could not be loaded, if it failed."""
+        return self._config_error
 
     def _load_history(self) -> None:
         """Load command execution history from JSON."""
@@ -440,11 +554,12 @@ class LauncherBackend(QObject):
         """Set and save global shortcut modifier preference."""
         if self._shortcut_modifier != modifier:
             self._shortcut_modifier = modifier
-            self._save_config_file()
+            saved = self._save_config_file()
             self.modifierChanged.emit()
-            self.statusNotification.emit(
-                f"Shortcut modifier updated to: {modifier}", True
-            )
+            if saved:
+                self.statusNotification.emit(
+                    f"Shortcut modifier updated to: {modifier}", True
+                )
 
     @Property(bool, notify=showCommandChanged)
     def showCommand(self) -> bool:
@@ -457,12 +572,13 @@ class LauncherBackend(QObject):
         bool_val = bool(value)
         if self._show_command != bool_val:
             self._show_command = bool_val
-            self._save_config_file()
+            saved = self._save_config_file()
             self.showCommandChanged.emit()
             state_label = "shown" if bool_val else "hidden"
-            self.statusNotification.emit(
-                f"Command preview {state_label}.", True
-            )
+            if saved:
+                self.statusNotification.emit(
+                    f"Command preview {state_label}.", True
+                )
 
     @Property(bool, notify=promptArgumentsChanged)
     def promptArguments(self) -> bool:
@@ -475,12 +591,13 @@ class LauncherBackend(QObject):
         bool_val = bool(value)
         if self._prompt_arguments != bool_val:
             self._prompt_arguments = bool_val
-            self._save_config_file()
+            saved = self._save_config_file()
             self.promptArgumentsChanged.emit()
             state_label = "enabled" if bool_val else "disabled"
-            self.statusNotification.emit(
-                f"Global argument prompt {state_label}.", True
-            )
+            if saved:
+                self.statusNotification.emit(
+                    f"Global argument prompt {state_label}.", True
+                )
 
     @Property(bool, notify=showOutputWindowChanged)
     def showOutputWindow(self) -> bool:
@@ -493,12 +610,13 @@ class LauncherBackend(QObject):
         bool_val = bool(value)
         if self._show_output_window != bool_val:
             self._show_output_window = bool_val
-            self._save_config_file()
+            saved = self._save_config_file()
             self.showOutputWindowChanged.emit()
             state_label = "enabled" if bool_val else "disabled"
-            self.statusNotification.emit(
-                f"Execution output window {state_label}.", True
-            )
+            if saved:
+                self.statusNotification.emit(
+                    f"Execution output window {state_label}.", True
+                )
 
     @Property("QVariantList", notify=sectionsChanged)
     def sections(self) -> List[Dict[str, Any]]:
@@ -623,15 +741,19 @@ class LauncherBackend(QObject):
             target_path = Path(local_path)
             if target_path.suffix.lower() != ".json":
                 target_path = target_path.with_suffix(".json")
-            payload = {
-                "shortcut_modifier": self._shortcut_modifier,
-                "show_command": self._show_command,
-                "prompt_arguments": self._prompt_arguments,
-                "show_output_window": self._show_output_window,
-                "sections": self._sections,
-            }
+            if self._config_error and os.path.realpath(
+                target_path
+            ) == os.path.realpath(self._config_path):
+                self.statusNotification.emit(
+                    "Export error: choose another file to avoid overwriting "
+                    "the invalid configuration.",
+                    False,
+                )
+                return False
             with target_path.open("w", encoding="utf-8") as file:
-                json.dump(payload, file, indent=4, ensure_ascii=False)
+                json.dump(
+                    self._config_payload(), file, indent=4, ensure_ascii=False
+                )
             self.statusNotification.emit(
                 f"Backup exported to: {target_path.name}", True
             )
@@ -657,26 +779,30 @@ class LauncherBackend(QObject):
             ):
                 self.statusNotification.emit("Invalid file structure.", False)
                 return False
-            self._sections = parsed_data["sections"]
-            self._shortcut_modifier = parsed_data.get(
-                "shortcut_modifier", "Ctrl+Shift"
-            )
-            self._show_command = bool(parsed_data.get("show_command", False))
-            self._prompt_arguments = bool(
-                parsed_data.get("prompt_arguments", False)
-            )
-            self._show_output_window = bool(
-                parsed_data.get("show_output_window", True)
-            )
-            self._save_config_file()
+            _validate_config(parsed_data)
+
+            previous = self._config_payload()
+            previous_error = self._config_error
+            preserved = None
+            if previous_error and self._config_path.exists():
+                preserved = self._preserve_invalid_config()
+            self._apply_config(parsed_data)
+            self._config_error = ""
+            if not self._save_config_file():
+                self._apply_config(previous)
+                self._config_error = previous_error
+                return False
+            if previous_error:
+                self.configErrorChanged.emit()
             self.sectionsChanged.emit()
             self.modifierChanged.emit()
             self.showCommandChanged.emit()
             self.promptArgumentsChanged.emit()
             self.showOutputWindowChanged.emit()
-            self.statusNotification.emit(
-                f"Backup imported: {source_path.name}", True
-            )
+            message = f"Backup imported: {source_path.name}"
+            if preserved is not None:
+                message += f". Invalid file preserved as {preserved.name}"
+            self.statusNotification.emit(message, True)
             return True
         except (json.JSONDecodeError, OSError, ValueError) as exc:
             self.statusNotification.emit(f"Import error: {exc}", False)
@@ -712,17 +838,27 @@ class LauncherBackend(QObject):
 
     @Slot(str, result=bool)
     def save_configuration_json(self, json_string: str) -> bool:
-        """Save a JSON configuration containing a ``sections`` field."""
+        """Save a JSON configuration containing a ``sections`` field.
+
+        Return whether it was written. On failure, keep the previous menu.
+        """
         try:
             parsed_data = json.loads(json_string)
+            _validate_config(parsed_data)
             if "sections" not in parsed_data:
-                return False
-            self._sections = parsed_data.get("sections", [])
-            self._save_config_file()
-            self.sectionsChanged.emit()
-            return True
-        except (json.JSONDecodeError, OSError):
+                raise ValueError("sections is missing")
+        except ValueError as exc:
+            self.statusNotification.emit(
+                f"Invalid configuration: {exc}", False
+            )
             return False
+        previous = self._sections
+        self._sections = parsed_data["sections"]
+        if not self._save_config_file():
+            self._sections = previous
+            return False
+        self.sectionsChanged.emit()
+        return True
 
     @Slot(str, str, str)
     def remove_recent(self, name: str, command: str, arguments: str) -> None:

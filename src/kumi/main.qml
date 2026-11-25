@@ -116,6 +116,23 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: configErrorDialog
+        objectName: "configErrorDialog"
+        title: "Configuration Not Loaded"
+        modal: true
+        standardButtons: Dialog.Ok
+        width: Math.min(root.width * 0.9, 500)
+        x: (root.width - width) / 2
+        y: (root.height - height) / 2
+
+        contentItem: Label {
+            text: backend.configError
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+        }
+    }
+
     Connections {
         target: backend
         function onStatusNotification(message, isSuccess) {
@@ -525,6 +542,9 @@ Kirigami.ApplicationWindow {
     }
 
     Component.onCompleted: {
+        if (backend.configError.length > 0) {
+            configErrorDialog.open()
+        }
         if (backend.favorites.length > 0) {
             root.navigateToPage(mainPageComponent, {
                 pageTitle: "Recent",

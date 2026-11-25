@@ -158,6 +158,22 @@ directory without overwriting data you want to keep. To back up all three
 categories, copy all three files separately in addition to, or instead of,
 exporting a JSON configuration backup.
 
+### Protection of the configuration file
+
+If `kumi_config.json` exists but cannot be read, is not valid JSON or has an
+invalid menu structure, Kumi shows an error and does not overwrite it. Changes
+to settings apply only to the current session, and the menu editor cannot save.
+Recent items and statistics are not affected.
+
+To recover, either fix the file and restart Kumi, or import a JSON backup.
+Before an import replaces an invalid file, Kumi copies it to
+`kumi_config.json.invalid-<timestamp>` in the same directory. If the copy
+cannot be created, the import is cancelled.
+
+Kumi saves the configuration through a temporary file, so a failed save keeps
+the previous version. It follows symbolic links and keeps the permissions of
+an existing file. If saving fails, Kumi reports the error.
+
 Failed commands with captured output can also create temporary error logs.
 Kumi attempts to remove logs older than 24 hours when it starts.
 
